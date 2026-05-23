@@ -1,7 +1,19 @@
-name: bbb
+name: Build WebKit
 on: workflow_dispatch
 jobs:
-  w:
-    runs-on: ubuntu-latest
-    steps: 
-      - run: git clone --depth 1  https://github.com/WebKit/WebKit.git
+  build:
+    runs-on: macos-14
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          brew install cmake ninja
+          git clone --depth 1 --recurse-submodules https://github.com/WebKit/WebKit.git
+          cd WebKit
+          ./Tools/Scripts/build-webkit --debug
+          cd WebKitBuild/Debug
+          ninja -j$(sysctl -n hw.ncpu)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WebKit-Build
+          path: WebKit/WebKitBuild/Debug/
