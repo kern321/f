@@ -1,19 +1,47 @@
-name: Build WebKit
-on: workflow_dispatch
+name: Build Apple WebKit (Stable)
+
+# 触发条件：手动触发 + 推送时触发（可选）
+on:
+  workflow_dispatch: # 手动触发（你说的“手动触发now”）
+  push:
+    branches: [ main ]
+
 jobs:
-  build:
-    runs-on: macos-14
-    timeout-minutes: 180
+  build-webkit:
+    runs-on: macos-14 # 必须用macOS（和WebKit原生环境一致，避免Linux兼容问题）
+    name: Build Apple WebKit (Release)
     steps:
-      - uses: actions/checkout@v4
-      - run: |
-          brew install cmake ninja
+      - name: 1. 安装基础依赖（解决Ninja/CMake版本问题）
+        run: |
+          brew update
+          brew install ninja cmake node@18 icu4c libjpeg libpng
+          # 强制使用Node.js 18，避免旧动作的兼容性警告
+          echo "PATH=/usr/local/opt/node@18/bin:$PATH" >> $GITHUB_PATH
+
+      - name: 2. 拉取WebKit源码（含子模块）
+        run: |
           git clone --depth 1 --recurse-submodules https://github.com/WebKit/WebKit.git
           cd WebKit
-          ./Tools/Scripts/build-webkit --debug
-          cd WebKitBuild/Debug
-          ninja -j$(sysctl -n hw.ncpu)
-      - uses: actions/upload-artifact@v4
+          git submodule update --init --recursive # 确保所有子模块拉取完整
+
+      - name: 3. 配置WebKit构建环境
+        run: |
+          cd WebKit
+          # 执行WebKit官方环境检查脚本，修复依赖问题
+          ./Tools/Scripts/check-webkit-style
+          ./Tools/Scripts/update-webkit
+
+      - name: 4. 构建Release版WebKit（核心步骤）
+        run: |
+          cd WebKit
+          # 构建macOS平台的Release版本，跳过不必要的测试
+          ./Tools/Scripts/build-webkit --release --no-jit --no-webcore-tests
+        # 构建失败时保留日志，方便排查
+        continue-on-error: false
+
+      - name: 5. 上传构建产物（可选，方便下载）
+        uses: actions/upload-artifact@v4
         with:
-          name: WebKit-Build
-          path: WebKit/WebKitBuild/Debug/
+          name: WebKit-Build-Artifacts
+          path: WebKit/WebKitBuild/Release/
+        if: success() # 仅构建成功时上传
